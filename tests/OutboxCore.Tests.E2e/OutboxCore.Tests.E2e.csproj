@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.8" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.12.0" />
+    <PackageReference Include="Testcontainers.MsSql" Version="4.12.0" />
+    <PackageReference Include="Testcontainers.RabbitMq" Version="4.12.0" />
+    <PackageReference Include="Testcontainers.Kafka" Version="4.12.0" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OutboxCore\OutboxCore.csproj" />
+    <ProjectReference Include="..\..\src\OutboxCore.EntityFrameworkCore\OutboxCore.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\src\OutboxCore.RabbitMQ\OutboxCore.RabbitMQ.csproj" />
+    <ProjectReference Include="..\..\src\OutboxCore.Dapper\OutboxCore.Dapper.csproj" />
+    <ProjectReference Include="..\..\src\OutboxCore.Kafka\OutboxCore.Kafka.csproj" />
+    <ProjectReference Include="..\..\samples\OutboxCore.Sample.WebApi\OutboxCore.Sample.WebApi.csproj" />
+  </ItemGroup>
+
+</Project>

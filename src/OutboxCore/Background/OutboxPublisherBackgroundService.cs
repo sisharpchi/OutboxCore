@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,62 +37,93 @@ public class OutboxPublisherBackgroundService : BackgroundService
     {
         _logger.LogInformation("OutboxPublisherBackgroundService started with Worker ID {WorkerId}", _workerId);
 
+        var modules = _options.Modules;
+        if (modules.Count == 0)
+        {
+            modules = new List<OutboxModuleOptions>
+            {
+                new OutboxModuleOptions
+                {
+                    ModuleName = "Default",
+                    BatchSize = _options.BatchSize,
+                    PollingInterval = _options.PollingInterval,
+                    LockDuration = _options.LockDuration,
+                    MaxRetryCount = _options.MaxRetryCount,
+                    DeleteOnPublish = _options.DeleteOnPublish
+                }
+            };
+        }
+
+        var tasks = modules.Select(module => RunModuleLoopAsync(module, stoppingToken)).ToList();
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task RunModuleLoopAsync(OutboxModuleOptions moduleOptions, CancellationToken stoppingToken)
+    {
+        var moduleName = moduleOptions.ModuleName;
+        _logger.LogInformation("Starting outbox processing loop for module {ModuleName}", moduleName);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                bool processedAny = await ProcessOutboxMessagesAsync(stoppingToken);
+                bool processedAny = await ProcessOutboxMessagesAsync(moduleName, moduleOptions, stoppingToken);
 
                 if (!processedAny)
                 {
-                    // Wait for either a notification via the Channel or the PollingInterval timeout
                     using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                    cts.CancelAfter(_options.PollingInterval);
+                    cts.CancelAfter(moduleOptions.PollingInterval);
 
                     try
                     {
-                        await _channel.WaitToReadAsync(cts.Token);
+                        await _channel.WaitToReadAsync(moduleName, cts.Token);
                     }
                     catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
                     {
-                        // Polling timeout reached, continue to poll
+                        // Polling interval elapsed, continue to lock and process
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while processing outbox messages");
+                _logger.LogError(ex, "Error occurred while processing outbox messages for module {ModuleName}", moduleName);
                 try
                 {
-                    await Task.Delay(_options.PollingInterval, stoppingToken);
+                    await Task.Delay(moduleOptions.PollingInterval, stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
-                    // Service is stopping
+                    // Service stopping
                 }
             }
         }
     }
 
-    private async Task<bool> ProcessOutboxMessagesAsync(CancellationToken cancellationToken)
+    private async Task<bool> ProcessOutboxMessagesAsync(
+        string moduleName,
+        OutboxModuleOptions moduleOptions,
+        CancellationToken cancellationToken)
     {
         using var scope = _serviceProvider.CreateScope();
-        var repository = scope.ServiceProvider.GetService<IOutboxRepository>();
-        var publisher = scope.ServiceProvider.GetService<IMessagePublisher>();
+        
+        var repository = scope.ServiceProvider.GetKeyedService<IOutboxRepository>(moduleName) 
+                         ?? scope.ServiceProvider.GetService<IOutboxRepository>();
+        var publisher = scope.ServiceProvider.GetKeyedService<IMessagePublisher>(moduleName)
+                        ?? scope.ServiceProvider.GetService<IMessagePublisher>();
 
         if (repository == null || publisher == null)
         {
-            _logger.LogWarning("IOutboxRepository or IMessagePublisher is not registered. Skipping outbox processing.");
+            _logger.LogWarning("IOutboxRepository or IMessagePublisher is not registered for module {ModuleName}. Skipping outbox processing.", moduleName);
             return false;
         }
 
-        var messages = await repository.LockMessagesAsync(_workerId, _options.LockDuration, _options.BatchSize, cancellationToken);
+        var messages = await repository.LockMessagesAsync(moduleName, _workerId, moduleOptions.LockDuration, moduleOptions.BatchSize, cancellationToken);
         if (messages.Count == 0)
         {
             return false;
         }
 
-        _logger.LogDebug("Worker {WorkerId} locked {Count} outbox messages for processing", _workerId, messages.Count);
+        _logger.LogDebug("Worker {WorkerId} locked {Count} outbox messages for module {ModuleName}", _workerId, messages.Count, moduleName);
 
         foreach (var message in messages)
         {
@@ -98,13 +131,14 @@ public class OutboxPublisherBackgroundService : BackgroundService
             {
                 await publisher.PublishAsync(message.MessageType, message.Content, cancellationToken);
 
-                if (_options.DeleteOnPublish)
+                if (moduleOptions.DeleteOnPublish)
                 {
-                    await repository.DeleteMessageAsync(message.Id, cancellationToken);
+                    await repository.DeleteMessageAsync(moduleName, message.Id, cancellationToken);
                 }
                 else
                 {
                     await repository.UpdateMessageStatusAsync(
+                        moduleName,
                         message.Id,
                         "Processed",
                         DateTimeOffset.UtcNow,
@@ -115,12 +149,13 @@ public class OutboxPublisherBackgroundService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to publish outbox message {MessageId} (Type: {MessageType})", message.Id, message.MessageType);
+                _logger.LogError(ex, "Failed to publish outbox message {MessageId} (Type: {MessageType}) for module {ModuleName}", message.Id, message.MessageType, moduleName);
 
                 int nextRetryCount = message.RetryCount + 1;
-                string status = nextRetryCount >= _options.MaxRetryCount ? "Failed" : "Pending";
+                string status = nextRetryCount >= moduleOptions.MaxRetryCount ? "Failed" : "Pending";
 
                 await repository.UpdateMessageStatusAsync(
+                    moduleName,
                     message.Id,
                     status,
                     null,

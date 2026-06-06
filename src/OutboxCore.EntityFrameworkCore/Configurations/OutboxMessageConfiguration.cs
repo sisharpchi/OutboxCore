@@ -12,6 +12,10 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
 
         builder.HasKey(x => x.Id);
 
+        builder.Property(x => x.ModuleName)
+            .HasMaxLength(100)
+            .IsRequired();
+
         builder.Property(x => x.MessageType)
             .HasMaxLength(250)
             .IsRequired();
@@ -26,7 +30,7 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
         builder.Property(x => x.WorkerId)
             .HasMaxLength(100);
 
-        builder.HasIndex(x => x.Status);
-        builder.HasIndex(x => new { x.Status, x.CreatedAt });
+        builder.HasIndex(x => new { x.ModuleName, x.Status });
+        builder.HasIndex(x => new { x.ModuleName, x.Status, x.CreatedAt });
     }
 }

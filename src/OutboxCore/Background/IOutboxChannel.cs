@@ -5,6 +5,6 @@ namespace OutboxCore.Background;
 
 public interface IOutboxChannel
 {
-    ValueTask WriteAsync(CancellationToken cancellationToken = default);
-    ValueTask<bool> WaitToReadAsync(CancellationToken cancellationToken = default);
+    ValueTask WriteAsync(string moduleName, CancellationToken cancellationToken = default);
+    ValueTask<bool> WaitToReadAsync(string moduleName, CancellationToken cancellationToken = default);
 }

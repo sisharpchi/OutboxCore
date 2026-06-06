@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -6,18 +7,25 @@ namespace OutboxCore.Background;
 
 public class OutboxChannel : IOutboxChannel
 {
-    private readonly Channel<byte> _channel = Channel.CreateBounded<byte>(new BoundedChannelOptions(1)
-    {
-        FullMode = BoundedChannelFullMode.DropWrite
-    });
+    private readonly ConcurrentDictionary<string, Channel<byte>> _channels = new();
 
-    public ValueTask WriteAsync(CancellationToken cancellationToken = default)
+    private Channel<byte> GetOrCreateChannel(string moduleName)
     {
-        return _channel.Writer.WriteAsync(0, cancellationToken);
+        return _channels.GetOrAdd(moduleName, _ => Channel.CreateBounded<byte>(new BoundedChannelOptions(1)
+        {
+            FullMode = BoundedChannelFullMode.DropWrite
+        }));
     }
 
-    public ValueTask<bool> WaitToReadAsync(CancellationToken cancellationToken = default)
+    public ValueTask WriteAsync(string moduleName, CancellationToken cancellationToken = default)
     {
-        return _channel.Reader.WaitToReadAsync(cancellationToken);
+        var channel = GetOrCreateChannel(moduleName);
+        return channel.Writer.WriteAsync(0, cancellationToken);
+    }
+
+    public ValueTask<bool> WaitToReadAsync(string moduleName, CancellationToken cancellationToken = default)
+    {
+        var channel = GetOrCreateChannel(moduleName);
+        return channel.Reader.WaitToReadAsync(cancellationToken);
     }
 }

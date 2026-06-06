@@ -5,6 +5,7 @@ namespace OutboxCore.Models;
 public class InboxMessage
 {
     public Guid Id { get; set; }
+    public string ModuleName { get; set; } = null!;
     public string MessageType { get; set; } = null!;
     public DateTimeOffset ReceivedAt { get; set; }
     public DateTimeOffset? ProcessedAt { get; set; }

@@ -427,3 +427,11 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Antigravity Swarm Agents directories
+.agents/
+\ .agents/
+
+# Temporary request and verification markdown files
+ORIGINAL_REQUEST.md
+TEST_READY.md

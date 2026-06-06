@@ -20,7 +20,24 @@ public static class OutboxServiceCollectionExtensions
 
         services.TryAddSingleton<IOutboxChannel, OutboxChannel>();
         services.AddHostedService<OutboxPublisherBackgroundService>();
+        services.AddHostedService<OutboxCleanupBackgroundService>();
 
         return new OutboxBuilder(services);
+    }
+}
+
+public static class OutboxBuilderExtensions
+{
+    public static OutboxModuleBuilder AddModule(
+        this OutboxBuilder builder,
+        string moduleName,
+        Action<OutboxModuleOptions>? configureOptions = null)
+    {
+        builder.Services.Configure<OutboxOptions>(options =>
+        {
+            options.RegisterModule(moduleName, configureOptions);
+        });
+
+        return new OutboxModuleBuilder(builder, moduleName);
     }
 }

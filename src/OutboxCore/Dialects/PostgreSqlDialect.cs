@@ -4,21 +4,23 @@ namespace OutboxCore.Dialects;
 
 public class PostgreSqlDialect : ISqlDialect
 {
-    public string GetLockMessagesSql(string tableName, int batchSize)
+    public string GetLockMessagesSql(string? schema, string tableName, int batchSize)
     {
+        var tableIdentifier = string.IsNullOrEmpty(schema) ? $@"""{tableName}""" : $@"""{schema}"".""{tableName}""";
         return $@"
-            UPDATE ""{tableName}""
+            UPDATE {tableIdentifier}
             SET ""Status"" = 'Processing',
                 ""LockedUntil"" = @LockedUntil,
                 ""WorkerId"" = @WorkerId
             WHERE ""Id"" IN (
                 SELECT ""Id""
-                FROM ""{tableName}""
-                WHERE ""Status"" = 'Pending' OR (""Status"" = 'Processing' AND ""LockedUntil"" < @Now)
+                FROM {tableIdentifier}
+                WHERE ""ModuleName"" = @ModuleName 
+                  AND (""Status"" = 'Pending' OR (""Status"" = 'Processing' AND ""LockedUntil"" < @Now))
                 ORDER BY ""CreatedAt""
                 LIMIT {batchSize}
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING ""Id"", ""MessageType"", ""Content"", ""CreatedAt"", ""ProcessedAt"", ""Status"", ""LockedUntil"", ""WorkerId"", ""Error"", ""RetryCount"";";
+            RETURNING ""Id"", ""ModuleName"", ""MessageType"", ""Content"", ""CreatedAt"", ""ProcessedAt"", ""Status"", ""LockedUntil"", ""WorkerId"", ""Error"", ""RetryCount"";";
     }
 }

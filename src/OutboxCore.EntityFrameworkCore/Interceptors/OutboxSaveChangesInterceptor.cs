@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -14,11 +16,25 @@ namespace OutboxCore.EntityFrameworkCore.Interceptors;
 public class OutboxSaveChangesInterceptor : SaveChangesInterceptor
 {
     private readonly IOutboxChannel _channel;
-    private bool _hasOutboxMessages;
+    private readonly string? _moduleName;
+    private readonly IModuleSelector? _moduleSelector;
+    private readonly ConcurrentBag<string> _modulesToNotify = new();
 
     public OutboxSaveChangesInterceptor(IOutboxChannel channel)
     {
         _channel = channel;
+    }
+
+    public OutboxSaveChangesInterceptor(IOutboxChannel channel, string moduleName)
+    {
+        _channel = channel;
+        _moduleName = moduleName;
+    }
+
+    public OutboxSaveChangesInterceptor(IOutboxChannel channel, IModuleSelector moduleSelector)
+    {
+        _channel = channel;
+        _moduleSelector = moduleSelector;
     }
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
@@ -55,56 +71,53 @@ public class OutboxSaveChangesInterceptor : SaveChangesInterceptor
     {
         if (context == null) return;
 
-        var entities = context.ChangeTracker
+        var entries = context.ChangeTracker
             .Entries<IHasDomainEvents>()
             .Where(x => x.Entity.DomainEvents != null && x.Entity.DomainEvents.Any())
             .ToList();
 
-        var domainEvents = entities
-            .SelectMany(x => x.Entity.DomainEvents)
-            .ToList();
+        if (!entries.Any()) return;
 
-        if (!domainEvents.Any())
+        var outboxMessages = new List<OutboxMessage>();
+
+        foreach (var entry in entries)
         {
-            _hasOutboxMessages = false;
-            return;
+            foreach (var domainEvent in entry.Entity.DomainEvents)
+            {
+                var module = _moduleName ?? _moduleSelector?.GetModuleName(entry.Entity, domainEvent) ?? "Default";
+                
+                _modulesToNotify.Add(module);
+
+                outboxMessages.Add(new OutboxMessage
+                {
+                    Id = domainEvent.Id == Guid.Empty ? Guid.NewGuid() : domainEvent.Id,
+                    ModuleName = module,
+                    MessageType = domainEvent.GetType().FullName ?? domainEvent.GetType().Name,
+                    Content = JsonSerializer.Serialize(domainEvent, domainEvent.GetType()),
+                    CreatedAt = domainEvent.OccurredOn == default ? DateTimeOffset.UtcNow : domainEvent.OccurredOn,
+                    Status = "Pending",
+                    RetryCount = 0
+                });
+            }
+            entry.Entity.ClearDomainEvents();
         }
-
-        _hasOutboxMessages = true;
-
-        var outboxMessages = domainEvents.Select(domainEvent => new OutboxMessage
-        {
-            Id = domainEvent.Id == Guid.Empty ? Guid.NewGuid() : domainEvent.Id,
-            MessageType = domainEvent.GetType().FullName ?? domainEvent.GetType().Name,
-            Content = JsonSerializer.Serialize(domainEvent, domainEvent.GetType()),
-            CreatedAt = domainEvent.OccurredOn == default ? DateTimeOffset.UtcNow : domainEvent.OccurredOn,
-            Status = "Pending",
-            RetryCount = 0
-        }).ToList();
 
         context.Set<OutboxMessage>().AddRange(outboxMessages);
-
-        foreach (var entityEntry in entities)
-        {
-            entityEntry.Entity.ClearDomainEvents();
-        }
     }
 
     private void NotifyOutboxChannel()
     {
-        if (_hasOutboxMessages)
+        while (_modulesToNotify.TryTake(out var moduleName))
         {
-            _channel.WriteAsync().GetAwaiter().GetResult();
-            _hasOutboxMessages = false;
+            _channel.WriteAsync(moduleName).GetAwaiter().GetResult();
         }
     }
 
     private async ValueTask NotifyOutboxChannelAsync(CancellationToken cancellationToken)
     {
-        if (_hasOutboxMessages)
+        while (_modulesToNotify.TryTake(out var moduleName))
         {
-            await _channel.WriteAsync(cancellationToken);
-            _hasOutboxMessages = false;
+            await _channel.WriteAsync(moduleName, cancellationToken);
         }
     }
 }

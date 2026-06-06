@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OutboxCore.EntityFrameworkCore\OutboxCore.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\OutboxCore.RabbitMQ\OutboxCore.RabbitMQ.csproj" />
+    <ProjectReference Include="..\..\src\OutboxCore.Dapper\OutboxCore.Dapper.csproj" />
   </ItemGroup>
 
 </Project>

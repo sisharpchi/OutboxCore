@@ -2,5 +2,5 @@ namespace OutboxCore.Abstractions;
 
 public interface ISqlDialect
 {
-    string GetLockMessagesSql(string tableName, int batchSize);
+    string GetLockMessagesSql(string? schema, string tableName, int batchSize);
 }

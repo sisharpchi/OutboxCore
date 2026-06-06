@@ -16,17 +16,19 @@ public class EfInboxProcessor<TContext> : IInboxProcessor where TContext : DbCon
         _dbContext = dbContext;
     }
 
-    public async Task<bool> HasBeenProcessedAsync(Guid messageId, CancellationToken cancellationToken = default)
+    public async Task<bool> HasBeenProcessedAsync(string moduleName, Guid messageId, CancellationToken cancellationToken = default)
     {
-        var message = await _dbContext.Set<InboxMessage>().FindAsync(new object[] { messageId }, cancellationToken);
+        var message = await _dbContext.Set<InboxMessage>()
+            .FirstOrDefaultAsync(x => x.Id == messageId && x.ModuleName == moduleName, cancellationToken);
         return message != null && message.Status == "Processed";
     }
 
-    public async Task TrackMessageAsync(Guid messageId, string messageType, CancellationToken cancellationToken = default)
+    public async Task TrackMessageAsync(string moduleName, Guid messageId, string messageType, CancellationToken cancellationToken = default)
     {
         var message = new InboxMessage
         {
             Id = messageId,
+            ModuleName = moduleName,
             MessageType = messageType,
             ReceivedAt = DateTimeOffset.UtcNow,
             Status = "Pending"
@@ -36,9 +38,10 @@ public class EfInboxProcessor<TContext> : IInboxProcessor where TContext : DbCon
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task MarkAsProcessedAsync(Guid messageId, CancellationToken cancellationToken = default)
+    public async Task MarkAsProcessedAsync(string moduleName, Guid messageId, CancellationToken cancellationToken = default)
     {
-        var message = await _dbContext.Set<InboxMessage>().FindAsync(new object[] { messageId }, cancellationToken);
+        var message = await _dbContext.Set<InboxMessage>()
+            .FirstOrDefaultAsync(x => x.Id == messageId && x.ModuleName == moduleName, cancellationToken);
         if (message != null)
         {
             message.Status = "Processed";
@@ -48,9 +51,10 @@ public class EfInboxProcessor<TContext> : IInboxProcessor where TContext : DbCon
         }
     }
 
-    public async Task MarkAsFailedAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
+    public async Task MarkAsFailedAsync(string moduleName, Guid messageId, string error, CancellationToken cancellationToken = default)
     {
-        var message = await _dbContext.Set<InboxMessage>().FindAsync(new object[] { messageId }, cancellationToken);
+        var message = await _dbContext.Set<InboxMessage>()
+            .FirstOrDefaultAsync(x => x.Id == messageId && x.ModuleName == moduleName, cancellationToken);
         if (message != null)
         {
             message.Status = "Failed";
@@ -58,5 +62,36 @@ public class EfInboxProcessor<TContext> : IInboxProcessor where TContext : DbCon
             _dbContext.Entry(message).State = EntityState.Modified;
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    public async Task<IReadOnlyList<InboxMessage>> GetMessagesAsync(string moduleName, string? status, int limit, CancellationToken cancellationToken = default)
+    {
+        IQueryable<InboxMessage> query = _dbContext.Set<InboxMessage>().Where(x => x.ModuleName == moduleName);
+        if (!string.IsNullOrEmpty(status))
+        {
+            query = query.Where(x => x.Status == status);
+        }
+
+        if (_dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+        {
+            var rawList = await query.ToListAsync(cancellationToken);
+            return rawList.OrderByDescending(x => x.ReceivedAt).Take(limit).ToList();
+        }
+        else
+        {
+            return await query.OrderByDescending(x => x.ReceivedAt).Take(limit).ToListAsync(cancellationToken);
+        }
+    }
+
+    public async Task<int> GetCountByStatusAsync(string moduleName, string status, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Set<InboxMessage>().CountAsync(x => x.ModuleName == moduleName && x.Status == status, cancellationToken);
+    }
+
+    public async Task DeleteOldMessagesAsync(string moduleName, DateTimeOffset olderThan, CancellationToken cancellationToken = default)
+    {
+        await _dbContext.Set<InboxMessage>()
+            .Where(x => x.ModuleName == moduleName && (x.Status == "Processed" || x.Status == "Failed") && x.ReceivedAt < olderThan)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 }

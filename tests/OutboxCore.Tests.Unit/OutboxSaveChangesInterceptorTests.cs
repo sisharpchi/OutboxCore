@@ -101,12 +101,44 @@ public class OutboxSaveChangesInterceptorTests : IDisposable
         Assert.Contains("Entity1", message.Content);
         Assert.Equal("Pending", message.Status);
         Assert.Equal(0, message.RetryCount);
+        Assert.Equal("Default", message.ModuleName);
 
         // Ensure DomainEvents are cleared on the original entity
         Assert.Empty(entity.DomainEvents);
 
-        // Verify channel notification was triggered
-        _channelMock.Verify(x => x.WriteAsync(It.IsAny<CancellationToken>()), Times.Once);
+        // Verify channel notification was triggered for Default
+        _channelMock.Verify(x => x.WriteAsync("Default", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveChangesAsync_WithModuleName_ShouldUseModuleNameAndNotifyChannelForThatModule()
+    {
+        // Arrange
+        var channelMock = new Mock<IOutboxChannel>();
+        var interceptor = new OutboxSaveChangesInterceptor(channelMock.Object, "OrderModule");
+        var options = new DbContextOptionsBuilder<TestDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        using var context = new TestDbContext(options);
+        var entity = new TestEntity { Id = Guid.NewGuid(), Name = "Entity2" };
+        entity.DoSomething();
+        context.TestEntities.Add(entity);
+
+        // Act
+        await context.SaveChangesAsync();
+
+        // Assert
+        using var checkContext = new TestDbContext(options);
+        var outboxMessages = await checkContext.OutboxMessages.ToListAsync();
+
+        Assert.Single(outboxMessages);
+        var message = outboxMessages.First();
+        Assert.Equal("OrderModule", message.ModuleName);
+
+        // Verify channel notification was triggered for OrderModule
+        channelMock.Verify(x => x.WriteAsync("OrderModule", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     public void Dispose()

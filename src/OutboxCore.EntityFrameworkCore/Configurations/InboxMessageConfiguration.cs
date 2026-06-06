@@ -10,7 +10,11 @@ public class InboxMessageConfiguration : IEntityTypeConfiguration<InboxMessage>
     {
         builder.ToTable("InboxMessages");
 
-        builder.HasKey(x => x.Id);
+        builder.HasKey(x => new { x.Id, x.ModuleName });
+
+        builder.Property(x => x.ModuleName)
+            .HasMaxLength(100)
+            .IsRequired();
 
         builder.Property(x => x.MessageType)
             .HasMaxLength(250)
@@ -20,6 +24,6 @@ public class InboxMessageConfiguration : IEntityTypeConfiguration<InboxMessage>
             .HasMaxLength(50)
             .IsRequired();
 
-        builder.HasIndex(x => x.Status);
+        builder.HasIndex(x => new { x.ModuleName, x.Status });
     }
 }

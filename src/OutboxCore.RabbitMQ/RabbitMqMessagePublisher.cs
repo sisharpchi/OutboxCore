@@ -22,6 +22,11 @@ public class RabbitMqMessagePublisher : IMessagePublisher, IDisposable
         _options = options.Value;
     }
 
+    public RabbitMqMessagePublisher(RabbitMqOptions options)
+    {
+        _options = options;
+    }
+
     private void EnsureConnectionAndChannel()
     {
         if (_channel != null && _channel.IsOpen) return;

@@ -5,6 +5,7 @@ namespace OutboxCore.Models;
 public class OutboxMessage
 {
     public Guid Id { get; set; }
+    public string ModuleName { get; set; } = null!;
     public string MessageType { get; set; } = null!;
     public string Content { get; set; } = null!;
     public DateTimeOffset CreatedAt { get; set; }
