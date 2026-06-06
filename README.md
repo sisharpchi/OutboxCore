@@ -57,19 +57,19 @@ Install the core library and the adapters you need via NuGet Package Manager:
 
 ```bash
 # Core Abstractions, Background Worker, and Dashboard UI
-dotnet add package OutboxCore --version 1.1.0
+dotnet add package OutboxCore --version 1.1.1
 
 # Entity Framework Core Integration
-dotnet add package OutboxCore.EntityFrameworkCore --version 1.1.0
+dotnet add package OutboxCore.EntityFrameworkCore --version 1.1.1
 
 # Dapper Integration
-dotnet add package OutboxCore.Dapper --version 1.1.0
+dotnet add package OutboxCore.Dapper --version 1.1.1
 
 # RabbitMQ Transport Provider
-dotnet add package OutboxCore.RabbitMQ --version 1.1.0
+dotnet add package OutboxCore.RabbitMQ --version 1.1.1
 
 # Kafka Transport Provider
-dotnet add package OutboxCore.Kafka --version 1.1.0
+dotnet add package OutboxCore.Kafka --version 1.1.1
 ```
 
 ---

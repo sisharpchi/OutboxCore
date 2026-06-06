@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Authors>sisharpchi</Authors>
     <Description>Kafka message broker publisher adapter for OutboxCore.</Description>
     <PackageProjectUrl>https://github.com/sisharpchi/OutboxCore</PackageProjectUrl>
