@@ -4,7 +4,7 @@
 [![NuGet Version](https://img.shields.io/nuget/v/OutboxCore.svg)](https://www.nuget.org/packages/OutboxCore)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-OutboxCore is a high-performance, lightweight, and extensible transactional messaging library for the modern .NET ecosystem. It solves the distributed transaction problem by providing reliable **Transactional Outbox** (reliable publishing) and **Transactional Inbox** (idempotent consumption) patterns for your microservices.
+OutboxCore is a high-performance, lightweight, and extensible transactional messaging library for the modern .NET ecosystem. It solves the distributed transaction problem by providing reliable **Transactional Outbox** (reliable publishing) and **Transactional Inbox** (idempotent consumption) patterns for your microservices and modular monoliths.
 
 Built with performance, low memory allocations, and scalability in mind, it is fully compatible with **Native AOT** and targets high-throughput distributed systems.
 
@@ -15,9 +15,12 @@ Built with performance, low memory allocations, and scalability in mind, it is f
 - 🔄 **Transactional Outbox Pattern**: Ensures domain events are written atomically with your business entities in the same database transaction.
 - 📥 **Transactional Inbox Pattern**: Enforces idempotent message consumption, eliminating duplicate message processing in at-least-once message brokers.
 - ⚡ **High Throughput (Low Allocation)**: Utilizes `System.Threading.Channels` for efficient, lock-free in-memory batch processing and event dispatching.
-- 🔌 **Database Agnostic (Optimized Locks)**: Features database-specific SQL locking dialects (`ISqlDialect`) like `FOR UPDATE SKIP LOCKED` for PostgreSQL and `UPDLOCK, READPAST` for SQL Server, enabling seamless scaling across replicas.
-- 📦 **Native AOT Ready**: Completely reflection-free, utilizing `System.Text.Json` Source Generators for blazing-fast serialization.
-- 🛠️ **Fluent Configuration**: A modern C# builder pattern for clean dependency injection and startup registration.
+- 🔌 **Database Agnostic (EF Core & Dapper)**: Optimized SQL locking dialects (`ISqlDialect`) like `FOR UPDATE SKIP LOCKED` for PostgreSQL and `UPDLOCK, READPAST` for SQL Server, enabling seamless scaling across replicas.
+- 🧱 **Modular Monolith Isolation**: Supports independent outbox/inbox processing loops partitioned by module name or schema prefix (e.g., `orders`, `billing`).
+- 🧹 **Automatic Storage Pruning**: Background cleanup services periodically prune old processed outbox and inbox records based on module retention options.
+- 🎛️ **Glassmorphic Dashboard UI**: Real-time analytics dashboard served directly from your ASP.NET Core application via `app.UseOutboxDashboard()`, displaying metrics and offering manual message retries.
+- 📦 **Multiple Broker Transports**: Full support for RabbitMQ and Apache Kafka publishers.
+- 🚀 **Native AOT Ready**: Completely reflection-free, utilizing `System.Text.Json` Source Generators for blazing-fast serialization.
 
 ---
 
@@ -27,16 +30,23 @@ Built with performance, low memory allocations, and scalability in mind, it is f
                                   +-----------------------------------------+
                                   |         OutboxCore.Sample.WebApi        |
                                   +-----------------------------------------+
-                                       /                  |                \
-                                      /                   |                 \
-                                     v                    v                  v
-                     +-------------------+      +-------------------+      +-------------------+
-                     |    OutboxCore     |      | OutboxCore.EFCore |      |OutboxCore.RabbitMQ|
-                     +-------------------+      +-------------------+      +-------------------+
-                     | Core Contracts    |      | DbContext         |      | RabbitMQ          |
-                     | Background Worker |      | Interceptors      |      | Message Publisher |
-                     | SQL Dialect Engine|      | DB Configurations |      | & Consumer        |
-                     +-------------------+      +-------------------+      +-------------------+
+                                 /                     |                     \
+                                /                      |                      \
+                               v                       v                       v
+               +-------------------+         +-------------------+         +-------------------+
+               |    OutboxCore     |         | OutboxCore.EFCore |         | OutboxCore.Dapper |
+               +-------------------+         +-------------------+         +-------------------+
+               | Core Contracts    |         | DbContext         |         | Dapper Repos      |
+               | Background Worker |         | Interceptors      |         | Raw SQL Dialects  |
+               | Dashboard UI      |         | DB Configurations |         +-------------------+
+               +-------------------+         +-------------------+                  
+                                 \                     /
+                                  v                   v
+                     +-------------------+     +-------------------+
+                     |OutboxCore.RabbitMQ|     | OutboxCore.Kafka  |
+                     +-------------------+     +-------------------+
+                     | RabbitMQ Pub      |     | Kafka Pub         |
+                     +-------------------+     +-------------------+
 ```
 
 ---
@@ -46,14 +56,20 @@ Built with performance, low memory allocations, and scalability in mind, it is f
 Install the core library and the adapters you need via NuGet Package Manager:
 
 ```bash
-# Core Abstractions and Background Worker
-dotnet add package OutboxCore
+# Core Abstractions, Background Worker, and Dashboard UI
+dotnet add package OutboxCore --version 1.1.0
 
 # Entity Framework Core Integration
-dotnet add package OutboxCore.EntityFrameworkCore
+dotnet add package OutboxCore.EntityFrameworkCore --version 1.1.0
+
+# Dapper Integration
+dotnet add package OutboxCore.Dapper --version 1.1.0
 
 # RabbitMQ Transport Provider
-dotnet add package OutboxCore.RabbitMQ
+dotnet add package OutboxCore.RabbitMQ --version 1.1.0
+
+# Kafka Transport Provider
+dotnet add package OutboxCore.Kafka --version 1.1.0
 ```
 
 ---
@@ -93,8 +109,7 @@ public class ApplicationDbContext : DbContext
 
 ### 2. Configure Dependency Injection in `Program.cs`
 
-Register `OutboxCore` with PostgreSQL locking and RabbitMQ publishing:
-
+#### Single Module Setup (EF Core + RabbitMQ)
 ```csharp
 using OutboxCore.Configuration;
 using OutboxCore.Dialects;
@@ -108,7 +123,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
 {
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
-    options.AddInterceptors(sp.GetRequiredService<OutboxSaveChangesInterceptor>());
+    options.AddInterceptors(sp.GetRequiredKeyService<OutboxSaveChangesInterceptor>("Default"));
 });
 
 // Configure OutboxCore
@@ -116,7 +131,11 @@ builder.Services.AddOutboxCore(options =>
 {
     options.BatchSize = 100;
     options.PollingInterval = TimeSpan.FromSeconds(5);
-    options.DeleteOnPublish = false; // Set to true to delete messages instead of marking as Processed
+    options.DeleteOnPublish = false; // Set to true to delete messages instead of keeping them
+    options.EnableCleanup = true;    // Periodically prune old processed records
+    options.CleanupInterval = TimeSpan.FromHours(1);
+    options.OutboxRetentionPeriod = TimeSpan.FromHours(24);
+    options.InboxRetentionPeriod = TimeSpan.FromDays(7);
 })
 .UseEntityFrameworkCore<ApplicationDbContext>(new PostgreSqlDialect()) // Inject DB Dialect
 .UseRabbitMq(options =>
@@ -127,39 +146,55 @@ builder.Services.AddOutboxCore(options =>
 });
 ```
 
-### 3. Emitting Domain Events from Entities
-
-Inherit your entities from `AggregateRoot` and raise domain events during business logic execution:
-
+#### Modular Monolith Multi-Module Setup (Dapper + Kafka + EF Core)
+You can configure isolated outbox and inbox workers per module with their own transport and repository settings:
 ```csharp
-using OutboxCore.Models;
+using OutboxCore.Configuration;
+using OutboxCore.Dapper.Extensions;
+using OutboxCore.Dialects;
+using OutboxCore.EntityFrameworkCore.Extensions;
+using OutboxCore.Kafka.Extensions;
+using OutboxCore.RabbitMQ.Extensions;
 
-public class Order : AggregateRoot
-{
-    public Guid Id { get; private set; }
-    public string CustomerName { get; private set; } = null!;
-    public decimal TotalAmount { get; private set; }
-
-    public static Order Create(string customerName, decimal totalAmount)
+builder.Services.AddOutboxCore()
+    // 1. Configure the "Orders" module using EF Core and RabbitMQ
+    .AddModule("Orders", moduleOptions =>
     {
-        var order = new Order
-        {
-            Id = Guid.NewGuid(),
-            CustomerName = customerName,
-            TotalAmount = totalAmount
-        };
-
-        // Raise domain event
-        order.RaiseDomainEvent(new OrderCreatedEvent(order.Id, order.CustomerName, order.TotalAmount));
-
-        return order;
-    }
-}
+        moduleOptions.BatchSize = 50;
+        moduleOptions.PollingInterval = TimeSpan.FromSeconds(2);
+        moduleOptions.OutboxRetentionPeriod = TimeSpan.FromHours(12);
+    })
+    .UseEntityFrameworkCore<ApplicationDbContext>(new PostgreSqlDialect())
+    .UseRabbitMq(options => { /* RabbitMQ config */ })
+    
+    // 2. Configure the "Billing" module using Dapper and Apache Kafka
+    .AddModule("Billing", moduleOptions =>
+    {
+        moduleOptions.BatchSize = 200;
+        moduleOptions.PollingInterval = TimeSpan.FromSeconds(1);
+        moduleOptions.InboxRetentionPeriod = TimeSpan.FromDays(3);
+    })
+    .UseDapper(sp => sp.GetRequiredService<DbConnection>(), new PostgreSqlDialect())
+    .UseKafka(options =>
+    {
+        options.BootstrapServers = "localhost:9092";
+    });
 ```
 
-When you call `SaveChanges` or `SaveChangesAsync` on your `DbContext`, `OutboxSaveChangesInterceptor` will automatically intercept the aggregates, extract the domain events, serialize them to JSON, and save them in the same transaction as your Order insert.
+### 3. Register the Glassmorphic Dashboard UI
 
-Once successfully saved, the background worker will be triggered via `System.Threading.Channels` for near real-time delivery!
+Register the lightweight embedded web dashboard middleware in your application pipeline:
+
+```csharp
+using OutboxCore.Dashboard;
+
+var app = builder.Build();
+
+// Enable the real-time outbox/inbox dashboard
+app.UseOutboxDashboard("/outbox-dashboard");
+
+app.Run();
+```
 
 ---
 
@@ -175,6 +210,11 @@ To run the automated tests locally:
 2. **Integration Tests** (requires Docker running):
    ```bash
    dotnet test tests/OutboxCore.Tests.Integration/OutboxCore.Tests.Integration.csproj
+   ```
+
+3. **E2E Tests** (runs against SQLite in-memory fallback, or PostgreSQL and RabbitMQ Testcontainers if Docker is active):
+   ```bash
+   dotnet test tests/OutboxCore.Tests.E2e/OutboxCore.Tests.E2e.csproj
    ```
 
 ---
