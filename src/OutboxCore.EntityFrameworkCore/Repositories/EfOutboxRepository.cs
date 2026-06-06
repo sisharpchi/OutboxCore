@@ -138,8 +138,25 @@ public class EfOutboxRepository<TContext> : IOutboxRepository where TContext : D
 
     public async Task DeleteOldMessagesAsync(string moduleName, DateTimeOffset olderThan, CancellationToken cancellationToken)
     {
-        await _dbContext.Set<OutboxMessage>()
-            .Where(x => x.ModuleName == moduleName && x.Status == "Processed" && x.CreatedAt < olderThan)
-            .ExecuteDeleteAsync(cancellationToken);
+        if (_dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+        {
+            var messages = await _dbContext.Set<OutboxMessage>()
+                .Where(x => x.ModuleName == moduleName && x.Status == "Processed")
+                .ToListAsync(cancellationToken);
+
+            var toDelete = messages.Where(x => x.CreatedAt < olderThan).ToList();
+
+            if (toDelete.Count > 0)
+            {
+                _dbContext.Set<OutboxMessage>().RemoveRange(toDelete);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
+        else
+        {
+            await _dbContext.Set<OutboxMessage>()
+                .Where(x => x.ModuleName == moduleName && x.Status == "Processed" && x.CreatedAt < olderThan)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
     }
 }

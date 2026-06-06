@@ -90,8 +90,25 @@ public class EfInboxProcessor<TContext> : IInboxProcessor where TContext : DbCon
 
     public async Task DeleteOldMessagesAsync(string moduleName, DateTimeOffset olderThan, CancellationToken cancellationToken = default)
     {
-        await _dbContext.Set<InboxMessage>()
-            .Where(x => x.ModuleName == moduleName && (x.Status == "Processed" || x.Status == "Failed") && x.ReceivedAt < olderThan)
-            .ExecuteDeleteAsync(cancellationToken);
+        if (_dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+        {
+            var messages = await _dbContext.Set<InboxMessage>()
+                .Where(x => x.ModuleName == moduleName && (x.Status == "Processed" || x.Status == "Failed"))
+                .ToListAsync(cancellationToken);
+
+            var toDelete = messages.Where(x => x.ReceivedAt < olderThan).ToList();
+
+            if (toDelete.Count > 0)
+            {
+                _dbContext.Set<InboxMessage>().RemoveRange(toDelete);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
+        else
+        {
+            await _dbContext.Set<InboxMessage>()
+                .Where(x => x.ModuleName == moduleName && (x.Status == "Processed" || x.Status == "Failed") && x.ReceivedAt < olderThan)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
     }
 }
