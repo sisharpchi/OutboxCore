@@ -26,4 +26,7 @@ jobs:
       run: dotnet build --no-restore --configuration Release
 
     - name: Run Tests
-      run: dotnet test --no-build --configuration Release --verbosity normal
+      run: |
+        dotnet test tests/OutboxCore.Tests.Unit/OutboxCore.Tests.Unit.csproj --no-build --configuration Release --verbosity normal
+        dotnet test tests/OutboxCore.Tests.Integration/OutboxCore.Tests.Integration.csproj --no-build --configuration Release --verbosity normal
+        dotnet test tests/OutboxCore.Tests.E2e/OutboxCore.Tests.E2e.csproj --no-build --configuration Release --verbosity normal

@@ -25,7 +25,10 @@ jobs:
       run: dotnet build --configuration Release --no-restore
 
     - name: Run Tests
-      run: dotnet test --configuration Release --no-build --verbosity normal
+      run: |
+        dotnet test tests/OutboxCore.Tests.Unit/OutboxCore.Tests.Unit.csproj --no-build --configuration Release --verbosity normal
+        dotnet test tests/OutboxCore.Tests.Integration/OutboxCore.Tests.Integration.csproj --no-build --configuration Release --verbosity normal
+        dotnet test tests/OutboxCore.Tests.E2e/OutboxCore.Tests.E2e.csproj --no-build --configuration Release --verbosity normal
 
     - name: Pack NuGet Packages
       run: dotnet pack --configuration Release --no-build --output ./dist

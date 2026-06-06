@@ -4,6 +4,15 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Version>1.1.0</Version>
+    <Authors>sisharpchi</Authors>
+    <Description>Dapper database adapter for OutboxCore, providing DapperOutboxRepository and DapperInboxProcessor.</Description>
+    <PackageProjectUrl>https://github.com/sisharpchi/OutboxCore</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/sisharpchi/OutboxCore.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,6 +22,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OutboxCore\OutboxCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
